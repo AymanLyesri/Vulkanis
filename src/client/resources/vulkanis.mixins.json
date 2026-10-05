@@ -1,0 +1,1 @@
+{"required":true,"package":"com.vulkanis.mixin","compatibilityLevel":"JAVA_25","client":["VulkanisUniformMixin","WorldCompositeMixin","SkySunMixin","DepthCopyMixin","VulkanisShadowPassMixin","VulkanisEntityDrawMixin","VulkanisBlobShadowMixin","sodium.VulkanisTerrainMixin","sodium.SodiumWorldRendererAccessor"],"injectors":{"defaultRequire":0}}

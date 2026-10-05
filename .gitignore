@@ -1,0 +1,10 @@
+.gradle/
+build/
+out/
+*.class
+run/*
+!run/shaderpacks/
+!run/shaderpacks/**
+logs/
+.project
+.settings/
