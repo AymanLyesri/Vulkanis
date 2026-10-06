@@ -49,9 +49,33 @@ public class PackValidationTest {
     File dir = pack("shadowsString", "{\"id\":\"x\",\"shadows\":{\"enabled\":\"yes\"}}");
     assertThrows(PackLoader.PackException.class, () -> PackLoader.loadSpec(dir));
   }
-  @Test public void ignoresUnknownPassesField() throws Exception {
-    File dir = pack("passesfield", "{\"id\":\"x\",\"shadowSize\":2048,\"passes\":[\"shadow\",\"world\",\"composite\"]}");
+  @Test public void legacySpecHasEmptyPassesAndCategories() throws Exception {
+    File dir = pack("legacy", "{\"id\":\"legacy\",\"shadowSize\":2048}");
+    PipelineSpec s = PackLoader.loadSpec(dir);
+    assertTrue(s.passes().isLegacy());
+    assertTrue(s.categories().isEmpty());
+  }
+  @Test public void graphSpecLoads() throws Exception {
+    File dir = pack("graphpack", "{\"id\":\"g\",\"shadowSize\":2048,"
+      + "\"passes\":[{\"name\":\"bright\",\"frag\":\"bright.fsh\",\"size\":0.25},"
+      + "{\"name\":\"final\",\"frag\":\"composite.fsh\",\"in\":[\"main\",\"bright\"]}]}");
+    new File(new File(dir, "shaders"), "bright.fsh").createNewFile();
+    PipelineSpec s = PackLoader.loadSpec(dir);
+    assertEquals(2, s.passes().passes().size());
+    assertEquals("bright", s.passes().passes().get(0).name());
+  }
+  @Test public void rejectsNonStringCategory() throws Exception {
+    File dir = pack("badcat", "{\"id\":\"x\",\"settings\":[{\"id\":\"s\",\"label\":\"S\",\"type\":\"float\",\"default\":1,\"min\":0,\"max\":2,\"step\":0.1,\"category\":42}]}");
+    PackLoader.PackException e = assertThrows(PackLoader.PackException.class, () -> PackLoader.loadSpec(dir));
+    assertTrue(e.getMessage().contains("category"), "named error, got: " + e.getMessage());
+  }
+  @Test public void ignoresActuallyUnknownField() throws Exception {
+    File dir = pack("futurefield", "{\"id\":\"x\",\"shadowSize\":2048,\"futureField\":[\"shadow\",\"world\",\"composite\"]}");
     assertEquals("x", PackLoader.loadSpec(dir).id());
+  }
+  @Test public void rejectsMalformedPasses() throws Exception {
+    File dir = pack("badpasses", "{\"id\":\"x\",\"shadowSize\":2048,\"passes\":[\"shadow\",\"world\",\"composite\"]}");
+    assertThrows(PackLoader.PackException.class, () -> PackLoader.loadSpec(dir));
   }
   @Test public void detectsPackOwnedShadowShaders() throws Exception {
     File dir = pack("irispack", "{\"id\":\"iris\",\"shadowSize\":2048}");

@@ -12,6 +12,7 @@ import net.minecraft.network.chat.Component;
 
 public class VulkanisShaderScreen extends Screen {
   private final Screen parent;
+  private String selectedTab = null;
 
   public VulkanisShaderScreen(Screen parent) {
     super(Component.literal("Vulkanis Shaders"));
@@ -96,6 +97,7 @@ public class VulkanisShaderScreen extends Screen {
     try {
       settings = com.vulkanis.pack.PackLoader.parseSettings(packDir);
     } catch (Exception e) {
+      com.vulkanis.render.ShadowHookState.setLastPackError(active.id() + ": " + e.getMessage());
       return;
     }
     if (settings.isEmpty()) return;
@@ -105,8 +107,16 @@ public class VulkanisShaderScreen extends Screen {
     } catch (Exception e) {
       return;
     }
+    java.util.List<com.vulkanis.pack.PackCategories.Category> order =
+      com.vulkanis.pack.PackCategories.groupOrder(settings, current.categories());
+    if (selectedTab == null || order.stream().noneMatch(c -> c.id().equals(selectedTab))) {
+      selectedTab = com.vulkanis.pack.PackCategories.defaultTabId(order);
+    }
     int y = 36 + (packs.size() + 2) * 24 + 12;
-    for (com.vulkanis.pack.PackSetting setting : settings) {
+    y = addTabRow(order, y);
+    java.util.List<com.vulkanis.pack.PackSetting> visible =
+      com.vulkanis.pack.PackCategories.visibleSettings(settings, selectedTab);
+    for (com.vulkanis.pack.PackSetting setting : visible) {
       final com.vulkanis.pack.PackSetting s = setting;
       double v = values.get(s);
       if (s.isBool()) {
@@ -139,6 +149,38 @@ public class VulkanisShaderScreen extends Screen {
         y += 24;
       }
     }
+  }
+
+  private int addTabRow(java.util.List<com.vulkanis.pack.PackCategories.Category> order, int y) {
+    if (order.size() <= 1) return y;
+    if (order.size() > 5) {
+      String label = "Tab: ";
+      for (var c : order) {
+        if (c.id().equals(selectedTab)) { label += c.label() + " >"; break; }
+      }
+      final java.util.List<com.vulkanis.pack.PackCategories.Category> tabs = order;
+      addRenderableWidget(Button.builder(Component.literal(label), b -> {
+        int i = 0;
+        for (int k = 0; k < tabs.size(); k++) {
+          if (tabs.get(k).id().equals(selectedTab)) { i = k; break; }
+        }
+        selectedTab = tabs.get((i + 1) % tabs.size()).id();
+        rebuildWidgets();
+      }).bounds(width / 2 - 150, y, 300, 20).build());
+      return y + 24;
+    }
+    int n = order.size();
+    int w = (300 - (n - 1) * 4) / n;
+    for (int i = 0; i < n; i++) {
+      final String id = order.get(i).id();
+      String label = (id.equals(selectedTab) ? "> " : "") + order.get(i).label();
+      int x = width / 2 - 150 + i * (w + 4);
+      addRenderableWidget(Button.builder(Component.literal(label), b -> {
+        selectedTab = id;
+        rebuildWidgets();
+      }).bounds(x, y, w, 20).build());
+    }
+    return y + 24;
   }
 
   private void flipBool(File dir, PipelineSpec pack, com.vulkanis.pack.PackSetting s) {

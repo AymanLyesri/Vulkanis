@@ -22,6 +22,16 @@ public class PackSettingsTest {
     assertEquals("shadowStrength", settings.get(0).id());
     assertEquals(0.85, settings.get(0).def());
   }
+  @Test public void categoryDefaultsToGeneral() throws Exception {
+    File dir = pack("cat1", "[{\"id\":\"s\",\"label\":\"S\",\"type\":\"float\",\"default\":1,\"min\":0,\"max\":2,\"step\":0.1}]");
+    var settings = PackLoader.parseSettings(dir);
+    assertEquals("general", settings.get(0).category());
+  }
+  @Test public void categoryNormalizes() throws Exception {
+    File dir = pack("cat2", "[{\"id\":\"b\",\"label\":\"B\",\"type\":\"float\",\"default\":1,\"min\":0,\"max\":2,\"step\":0.1,\"category\":\"Bloom\"}]");
+    var settings = PackLoader.parseSettings(dir);
+    assertEquals("bloom", settings.get(0).category());
+  }
   @Test public void emptyWhenAbsent() throws Exception {
     File dir = new File("build/tmp/set-empty");
     dir.mkdirs();

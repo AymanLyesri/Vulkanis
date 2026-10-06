@@ -7,7 +7,7 @@ layout(std140) uniform SamplerInfo {
     int ShowDepth;
     float Proj22;
     float Proj32;
-    float Pad0;
+    float Exposure;
     vec3 SunDir;
     vec3 CamPos;
     mat4 InvViewProj;

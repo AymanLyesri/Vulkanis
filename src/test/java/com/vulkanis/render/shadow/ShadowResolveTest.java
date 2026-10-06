@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 
 class ShadowResolveTest {
   @Test public void sizeAcceptsSpecValue() {
-    assertEquals(4096, CascadeShadows.resolveSize(new PipelineSpec("x", "X", "1", 4096, true, false, false)));
+    assertEquals(4096, CascadeShadows.resolveSize(new PipelineSpec("x", "X", "1", 4096, true, false, false, new com.vulkanis.pack.PassGraph(java.util.List.of()), java.util.List.of())));
   }
 
   @Test public void sizeFallsBackWithoutSpec() {
@@ -14,9 +14,9 @@ class ShadowResolveTest {
   }
 
   @Test public void sizeSnapsOutliers() {
-    assertEquals(4096, CascadeShadows.resolveSize(new PipelineSpec("x", "X", "1", 8192, true, false, false)));
-    assertEquals(2048, CascadeShadows.resolveSize(new PipelineSpec("x", "X", "1", 3072, true, false, false)));
-    assertEquals(1024, CascadeShadows.resolveSize(new PipelineSpec("x", "X", "1", 512, true, false, false)));
+    assertEquals(4096, CascadeShadows.resolveSize(new PipelineSpec("x", "X", "1", 8192, true, false, false, new com.vulkanis.pack.PassGraph(java.util.List.of()), java.util.List.of())));
+    assertEquals(2048, CascadeShadows.resolveSize(new PipelineSpec("x", "X", "1", 3072, true, false, false, new com.vulkanis.pack.PassGraph(java.util.List.of()), java.util.List.of())));
+    assertEquals(1024, CascadeShadows.resolveSize(new PipelineSpec("x", "X", "1", 512, true, false, false, new com.vulkanis.pack.PassGraph(java.util.List.of()), java.util.List.of())));
   }
 
   @Test public void radiusClampsToPackRange() {

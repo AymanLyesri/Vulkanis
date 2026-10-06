@@ -33,8 +33,8 @@
 ### Task 1: `PackSetting` category field
 
 **Files:**
-- Modify: `src/client/java/com/example/vulkan/pack/PackSetting.java`
-- Test: `src/test/java/com/example/vulkan/pack/PackSettingsTest.java`
+- Modify: `src/client/java/com/vulkanis/pack/PackSetting.java`
+- Test: `src/test/java/com/vulkanis/pack/PackSettingsTest.java`
 
 **Interfaces:**
 - Consumes: nothing new.
@@ -103,9 +103,9 @@ Expected: PASS, and the full suite still passes (`./gradlew test`).
 ### Task 2: Categories order list + grouping helper
 
 **Files:**
-- Create: `src/client/java/com/example/vulkan/pack/PackCategories.java`
-- Modify: `src/client/java/com/example/vulkan/pack/PackLoader.java` (add `parseCategories`)
-- Test: `src/test/java/com/example/vulkan/pack/PackCategoriesTest.java`
+- Create: `src/client/java/com/vulkanis/pack/PackCategories.java`
+- Modify: `src/client/java/com/vulkanis/pack/PackLoader.java` (add `parseCategories`)
+- Test: `src/test/java/com/vulkanis/pack/PackCategoriesTest.java`
 
 **Interfaces:**
 - Consumes: `List<PackSetting>` (Task 1).
@@ -188,9 +188,9 @@ Expected: PASS.
 ### Task 3: Pass-graph spec + validation (pure data, no GPU)
 
 **Files:**
-- Create: `src/client/java/com/example/vulkan/pack/PassGraph.java`
-- Modify: `src/client/java/com/example/vulkan/pack/PackLoader.java` (add `parsePasses`)
-- Test: `src/test/java/com/example/vulkan/pack/PassGraphTest.java`
+- Create: `src/client/java/com/vulkanis/pack/PassGraph.java`
+- Modify: `src/client/java/com/vulkanis/pack/PackLoader.java` (add `parsePasses`)
+- Test: `src/test/java/com/vulkanis/pack/PassGraphTest.java`
 
 **Interfaces:**
 - Consumes: `File packDir` (reads `pipeline.json` + checks `shaders/<frag>` existence).
@@ -263,9 +263,9 @@ Expected: PASS.
 ### Task 4: `PipelineSpec` carries passes + categories
 
 **Files:**
-- Modify: `src/client/java/com/example/vulkan/pack/PipelineSpec.java`
-- Modify: `src/client/java/com/example/vulkan/pack/PackLoader.java` (`loadSpec` fills new fields)
-- Test: extend `src/test/java/com/example/vulkan/pack/PackValidationTest.java` (read it first; follow its style)
+- Modify: `src/client/java/com/vulkanis/pack/PipelineSpec.java`
+- Modify: `src/client/java/com/vulkanis/pack/PackLoader.java` (`loadSpec` fills new fields)
+- Test: extend `src/test/java/com/vulkanis/pack/PackValidationTest.java` (read it first; follow its style)
 
 **Interfaces:**
 - Consumes: `PassGraph`, `List<PackCategories.Category>` (Tasks 2–3).
@@ -292,8 +292,8 @@ Expected: PASS.
 ### Task 5: Settings tabs in `VulkanisShaderScreen`
 
 **Files:**
-- Modify: `src/client/java/com/example/vulkan/screen/VulkanisShaderScreen.java`
-- Test: `src/test/java/com/example/vulkan/screen/SettingsTabsTest.java` (new; pure-logic only)
+- Modify: `src/client/java/com/vulkanis/screen/VulkanisShaderScreen.java`
+- Test: `src/test/java/com/vulkanis/screen/SettingsTabsTest.java` (new; pure-logic only)
 
 **Interfaces:**
 - Consumes: `PackCategories.groupOrder` + `PackLoader.parseCategories` (Task 2).
@@ -338,10 +338,10 @@ Run: `./gradlew test` (Java 25 env) PASS; then `./gradlew build`, copy jar to in
 ### Task 6: Multi-pass executor in `render/`
 
 **Files:**
-- Create: `src/client/java/com/example/vulkan/render/PassExecutor.java`
-- Modify: `src/client/java/com/example/vulkan/render/CompositeRenderer.java` (delegate per-pass draws to it; keep legacy single-pass path intact)
-- Modify: `src/client/java/com/example/vulkan/VulkanisClient.java` (`loadComposite` loads every pass frag with `{{token}}` substitution into `ShaderLibrary` keys `post/<passname>`)
-- Test: `src/test/java/com/example/vulkan/render/PassExecutorTest.java` (pure resolution logic, no GPU)
+- Create: `src/client/java/com/vulkanis/render/PassExecutor.java`
+- Modify: `src/client/java/com/vulkanis/render/CompositeRenderer.java` (delegate per-pass draws to it; keep legacy single-pass path intact)
+- Modify: `src/client/java/com/vulkanis/VulkanisClient.java` (`loadComposite` loads every pass frag with `{{token}}` substitution into `ShaderLibrary` keys `post/<passname>`)
+- Test: `src/test/java/com/vulkanis/render/PassExecutorTest.java` (pure resolution logic, no GPU)
 
 **Interfaces:**
 - Consumes: `PassGraph` (Task 3), `ShaderLibrary`, `PackValues`.
@@ -384,10 +384,10 @@ Run: `./gradlew test` PASS; `./gradlew build`, deploy jar, select DemoShader (st
 ### Task 7: Exposure float in the `SamplerInfo` padding slot
 
 **Files:**
-- Modify: `src/client/java/com/example/vulkan/render/CompositeRenderer.java` (`refreshSamplerInfo` writes exposure at the `Pad0` byte offset; document the offset)
+- Modify: `src/client/java/com/vulkanis/render/CompositeRenderer.java` (`refreshSamplerInfo` writes exposure at the `Pad0` byte offset; document the offset)
 - Modify: `run/shaderpacks/VulkanicShader/shaders/composite.vsh` + `composite.fsh` (declare `float Exposure;` where `float Pad0;` was — keep position, rename only)
 - Modify: `run/shaderpacks/DemoShader/shaders/composite.vsh` (same rename)
-- Test: `src/test/java/com/example/vulkan/render/SamplerInfoLayoutTest.java` (new; asserts the exposure float offset equals the old `Pad0` offset and total size stays 192)
+- Test: `src/test/java/com/vulkanis/render/SamplerInfoLayoutTest.java` (new; asserts the exposure float offset equals the old `Pad0` offset and total size stays 192)
 
 **Interfaces:**
 - Consumes: `ShadowHookState.sunDir()` (already available).

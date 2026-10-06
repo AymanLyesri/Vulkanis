@@ -37,10 +37,12 @@ public final class CompositeRenderer {
     return t;
   });
 
-  private final ShaderLibrary library;
+  private ShaderLibrary library;
   private final String namespace;
   private final String vertexPath;
   private final String fragmentPath;
+  private com.vulkanis.pack.PassGraph passGraph;
+  private PassExecutor passExecutor;
   private RenderPipeline pipeline;
   private PipelineCache cache;
   private CompiledRenderPipeline compiled;
@@ -52,6 +54,10 @@ public final class CompositeRenderer {
   private GpuBuffer samplerInfo;
   private int samplerW = -1;
   private int samplerH = -1;
+  private float exposure = 1.0f;
+  static final int SAMPLER_INFO_BYTES = 192;
+  static final int SAMPLER_PAD0_OFFSET = 28;
+  static final int SAMPLER_EXPOSURE_OFFSET = SAMPLER_PAD0_OFFSET;
   private boolean errorLogged;
   private boolean debugErrorLogged;
   private boolean depthLogged;
@@ -94,6 +100,30 @@ public final class CompositeRenderer {
       public void close() {
       }
     };
+  }
+
+  public synchronized void setPassGraph(com.vulkanis.pack.PassGraph graph) {
+    if (passExecutor != null) passExecutor.close();
+    passExecutor = null;
+    passGraph = (graph != null && !graph.isLegacy()) ? graph : null;
+  }
+
+  /**
+   * Settings-tick fast path: when the incoming renderer has the same pass
+   * topology, adopt its library (fresh {{token}} values) and recompile in
+   * place, keeping transient targets and exposure history alive.
+   */
+  public synchronized boolean adoptIfSameTopology(CompositeRenderer next, com.vulkanis.pack.PassGraph graph) {
+    boolean same = (passGraph == null) ? graph.isLegacy()
+      : (!graph.isLegacy() && com.vulkanis.pack.PassGraph.sameTopology(passGraph, graph));
+    if (!same) return false;
+    library = next.library;
+    resetPending();
+    return true;
+  }
+
+  ShaderLibrary libraryForTest() {
+    return library;
   }
 
   public synchronized void ensurePipeline(GpuDevice device) {
@@ -139,6 +169,16 @@ public final class CompositeRenderer {
       boolean showDepth = ShadowHookState.showDepth();
       if (showDepth) {
         renderDebug(device, main);
+        return;
+      }
+      if (passGraph != null) {
+        if (passExecutor == null) passExecutor = new PassExecutor(library, namespace, passGraph);
+        int w = main.width;
+        int h = main.height;
+        refreshSamplerInfo(device, w, h, 0);
+        if (passExecutor.render(device, main, samplerInfo.slice())) {
+          ShadowHookState.noteCompositeRun();
+        }
         return;
       }
       if (compiled == null) {
@@ -236,6 +276,23 @@ public final class CompositeRenderer {
     }
   }
 
+  static float smoothExposure(float current, double target) {
+    return current + (float) ((target - current) * 0.05);
+  }
+
+  static ByteBuffer writeSamplerInfo(int w, int h, int showDepthMode, float proj22, float proj32,
+      float[] sun, float[] cam, float[] invViewProj, float[] viewProj, float exposureValue) {
+    ByteBuffer info = ByteBuffer.allocateDirect(SAMPLER_INFO_BYTES).order(ByteOrder.nativeOrder());
+    info.putFloat((float) w).putFloat((float) h).putFloat((float) w).putFloat((float) h);
+    info.putInt(showDepthMode).putFloat(proj22).putFloat(proj32).putFloat(exposureValue);
+    info.putFloat(sun[0]).putFloat(sun[1]).putFloat(sun[2]).putFloat(0.0f);
+    info.putFloat(cam[0]).putFloat(cam[1]).putFloat(cam[2]).putFloat(0.0f);
+    for (float f : invViewProj) info.putFloat(f);
+    for (float f : viewProj) info.putFloat(f);
+    info.flip();
+    return info;
+  }
+
   private void refreshSamplerInfo(GpuDevice device, int w, int h, int showDepthMode) {
     if (samplerInfo == null || w != samplerW || h != samplerH) {
       if (samplerInfo != null) samplerInfo.close();
@@ -243,23 +300,17 @@ public final class CompositeRenderer {
       samplerW = w;
       samplerH = h;
     }
-    ByteBuffer info = ByteBuffer.allocateDirect(192).order(ByteOrder.nativeOrder());
-    info.putFloat((float) w).putFloat((float) h).putFloat((float) w).putFloat((float) h);
-    info.putInt(showDepthMode).putFloat(ShadowHookState.proj22()).putFloat(ShadowHookState.proj32()).putFloat(0.0f);
     float[] sun = ShadowHookState.sunDir();
-    info.putFloat(sun[0]).putFloat(sun[1]).putFloat(sun[2]).putFloat(0.0f);
-    float[] cam = ShadowHookState.camPos();
-    info.putFloat(cam[0]).putFloat(cam[1]).putFloat(cam[2]).putFloat(0.0f);
-    for (float f : ShadowHookState.invViewProj()) info.putFloat(f);
-    for (float f : ShadowHookState.viewProj()) info.putFloat(f);
-    info.flip();
+    exposure = smoothExposure(exposure, PassExecutor.exposureTarget(sun[1]));
+    ByteBuffer info = writeSamplerInfo(w, h, showDepthMode, ShadowHookState.proj22(), ShadowHookState.proj32(),
+      sun, ShadowHookState.camPos(), ShadowHookState.invViewProj(), ShadowHookState.viewProj(), exposure);
     GpuBuffer fresh = device.createBuffer(() -> "vulkanis sampler info",
       GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, info);
     if (samplerInfo != null) samplerInfo.close();
     samplerInfo = fresh;
   }
 
-  private static void bindDepth(RenderPass pass, RenderTarget main) {
+  static void bindDepth(RenderPass pass, RenderTarget main) {
     if (main.getDepthTextureView() != null) {
       pass.setUniform("InDepth", main.getDepthTextureView(),
         RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
@@ -273,12 +324,14 @@ public final class CompositeRenderer {
   }
 
   public void close() {
+    if (passExecutor != null) passExecutor.close();
     if (samplerInfo != null) samplerInfo.close();
     if (cache != null) cache.close();
     if (debugCache != null) debugCache.close();
   }
 
   public void resetPending() {
+    if (passExecutor != null) passExecutor.resetPending();
     pending = null;
     compiled = null;
     debugPending = null;

@@ -3,7 +3,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 class ShadowsGateTest {
   private static PipelineSpec spec(boolean shadows) {
-    return new PipelineSpec("x", "X", "1", 2048, shadows, true, true);
+    return new PipelineSpec("x", "X", "1", 2048, shadows, true, true, new com.vulkanis.pack.PassGraph(java.util.List.of()), java.util.List.of());
   }
   @Test public void onWhenMasterAndPackEnable() {
     assertTrue(PackManager.shadowsActive(true, spec(true)));
@@ -19,10 +19,10 @@ class ShadowsGateTest {
   }
   @Test public void offWhenPackLacksShadowShaders() {
     assertFalse(PackManager.shadowsActive(true,
-      new PipelineSpec("x", "X", "1", 2048, true, false, true)));
+      new PipelineSpec("x", "X", "1", 2048, true, false, true, new com.vulkanis.pack.PassGraph(java.util.List.of()), java.util.List.of())));
   }
   @Test public void offWhenPackLacksTerrainShaders() {
     assertFalse(PackManager.shadowsActive(true,
-      new PipelineSpec("x", "X", "1", 2048, true, true, false)));
+      new PipelineSpec("x", "X", "1", 2048, true, true, false, new com.vulkanis.pack.PassGraph(java.util.List.of()), java.util.List.of())));
   }
 }

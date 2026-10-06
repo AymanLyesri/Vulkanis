@@ -96,6 +96,13 @@ public class VulkanisClient implements ClientModInitializer {
       ShaderLibrary lib = new ShaderLibrary();
       lib.put(ShaderLibrary.key("vulkanis", "post/composite", "vertex"), vsh);
       lib.put(ShaderLibrary.key("vulkanis", "post/composite", "fragment"), fsh);
+      com.vulkanis.pack.PassGraph graph = com.vulkanis.pack.PackLoader.parsePasses(packDir);
+      for (com.vulkanis.pack.PassGraph.Pass p : graph.passes()) {
+        String frag = values.apply(Files.readString(new File(new File(packDir, "shaders"), p.frag()).toPath()), settings);
+        LOG.info("vulkanis: pass load {} tokensLeft={}", p.name(), frag.contains("{{"));
+        lib.put(ShaderLibrary.key("vulkanis", "post/" + p.name(), "vertex"), vsh);
+        lib.put(ShaderLibrary.key("vulkanis", "post/" + p.name(), "fragment"), frag);
+      }
       synchronized (packShaders) {
         packShaders.remove(ShaderLibrary.key("vulkanis", "pack/shadow", "vertex"));
         packShaders.remove(ShaderLibrary.key("vulkanis", "pack/shadow", "fragment"));
@@ -104,9 +111,11 @@ public class VulkanisClient implements ClientModInitializer {
       }
       loadPackShaderBlock(shadersDir, "shadow", values, settings);
       loadPackShaderBlock(shadersDir, "terrain", values, settings);
-      return new CompositeRenderer(lib, "vulkanis", "post/composite", "post/composite");
+      CompositeRenderer renderer = new CompositeRenderer(lib, "vulkanis", "post/composite", "post/composite");
+      renderer.setPassGraph(graph);
+      return renderer;
     } catch (Exception e) {
-      LOG.warn("vulkanis: no composite shaders in {}, pass disabled", shadersDir);
+      LOG.warn("vulkanis: no composite shaders in {}, pass disabled: {}", shadersDir, e.getMessage());
       ShadowHookState.setCompositeReady(false);
       return null;
     }
@@ -186,11 +195,24 @@ public class VulkanisClient implements ClientModInitializer {
     try {
       spec = PackLoader.loadSpec(packDir);
     } catch (Exception e) {
-      LOG.warn("vulkanis: pack select rejected {}", packDir.getName());
+      LOG.warn("vulkanis: pack select rejected {}: {}", packDir.getName(), e.getMessage());
+      ShadowHookState.setLastPackError(packDir.getName() + ": " + e.getMessage());
       return;
     }
     CompositeRenderer next = loadComposite(new File(packDir, "shaders"));
     if (next == null) return;
+    if (composite != null && composite.adoptIfSameTopology(next, spec.passes())) {
+      next.close();
+      refreshShaderValues(packDir);
+      ShadowHookState.setLastPackError("");
+      config.selectedPack = spec.id();
+      try {
+        config.save(new File(FabricLoader.getInstance().getGameDir().toFile(), "config/vulkanis.json"));
+      } catch (Exception e) {
+        LOG.warn("vulkanis: pack select save failed", e);
+      }
+      return;
+    }
     ShadowHookState.setActiveSpec(spec);
     refreshShaderValues(packDir);
     // Order: packShaders keys were already refreshed by loadComposite above; dropping
