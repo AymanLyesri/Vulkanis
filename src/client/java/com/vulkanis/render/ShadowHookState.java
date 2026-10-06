@@ -61,7 +61,7 @@ public final class ShadowHookState {
   public static void setShowDepth(boolean show) { showDepth = show; if (!show) debugCascade = -1; }
   public static boolean showDepth() { return showDepth; }
   private static volatile boolean showDepth;
-  /** -1 = main depth, 0-3 = cascade shadow map. Only meaningful when showDepth. */
+  /** -1 = main depth, 0-2 = cascade shadow map. Only meaningful when showDepth. */
   public static void setDebugCascade(int cascade) { debugCascade = cascade; }
   public static int debugCascade() { return debugCascade; }
   private static volatile int debugCascade = -1;

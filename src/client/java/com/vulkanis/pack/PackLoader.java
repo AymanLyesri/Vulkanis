@@ -36,9 +36,14 @@ public final class PackLoader {
         && new File(packDir, "shaders/shadow.fsh").exists();
     boolean hasTerrain = new File(packDir, "shaders/terrain.vsh").exists()
         && new File(packDir, "shaders/terrain.fsh").exists();
+    int api = optInt(o, "api", 0);
+    if ((hasShadow || hasTerrain) && api != PipelineSpec.API_VERSION) {
+      throw new PackException("pack shadow api mismatch (want api " + PipelineSpec.API_VERSION
+        + " with " + PipelineSpec.API_CASCADES + " cascades, got " + api + ")");
+    }
     parseSettings(packDir);
     return new PipelineSpec(id, optString(o, "name", ""), optString(o, "version", ""), shadow, shadowsEnabled,
-        hasShadow, hasTerrain, parsePasses(packDir), parseCategories(packDir));
+        hasShadow, hasTerrain, parsePasses(packDir), parseCategories(packDir), api);
   }
   public static List<PipelineSpec> listPacks(File dirs) {
     List<PipelineSpec> out = new ArrayList<>();

@@ -97,27 +97,29 @@ cp run/shaderpacks/VulkanicShader/pipeline.json <instance>/minecraft/shaderpacks
   `maxShadowDistance/ShadowMapSizeSetting()`, backend-warning wiring (startup toast via tick,
   red chat via JOIN).
 - `BackendCheck`/`BackendWarning` — device-name backend classifier (unit-tested) + warn-once toast/chat.
-- `pack/` — `PackLoader` (strict `pipeline.json` validation: rejects trailing commas, bad shadowSize),
-  `PackSetting`/`PackValues` (`settings.json` per pack, `{{token}}` substitution into GLSL),
-  `PackManager` (keep-last-good), `ShaderLibrary`, `PipelineSpec`, `ShaderConfig`.
+- `pack/` — `PackLoader` (strict `pipeline.json` validation: rejects trailing commas, bad shadowSize,
+  shadow-shader packs require `"api": 1`), `PackSetting`/`PackValues` (`settings.json` per pack,
+  `{{token}}` substitution into GLSL), `ShaderIncludes` (`#include <vulkanis/...>` resolver),
+  `PackManager` (keep-last-good), `ShaderLibrary`, `PipelineSpec` (`API_VERSION=1`, `API_CASCADES=3`), `ShaderConfig`.
 - `render/CompositeRenderer` — fullscreen tonemap/vignette/depth-view pass, 192B `SamplerInfo` UBO
   (OutSize/InSize/ShowDepth/Proj22/Proj32/SunDir/CamPos/InvViewProj/ViewProj), per-frame buffer.
 - `render/ShadowDepthStore` — persistent main-depth copy (in-frame pass). `copyShadowMap`
   is currently uncalled (debug views removed); `DepthCopyMixin` always copies main depth.
-- `render/shadow/` — `CascadeShadows` (4 frustum-fitted cascades over Shadow Distance,
-  blended uniform/log splits, texel-snapped centers, staggered refits 3/8/16/32 with
+- `render/shadow/` — `CascadeShadows` (3 frustum-fitted cascades over Shadow Distance,
+  blended uniform/log splits, texel-snapped centers, staggered refits 3/8/16 with
   movement+direction gates, camera-delta slide between refits, per-section NDC
-  membership test, per-cascade targets {S,S/2,S/4,S/4}, 352B multi-cascade UBO,
+  membership test, per-cascade targets {S,S/2,S/4}, 288B multi-cascade UBO,
   vanilla-cache pipeline insert),
   `CascadePlans` (cached per-cascade caster lists from all loaded regions),
-  `VulkanisShadowPipelines` (caster/receiver builders; receiver binds 4 samplers +
-  UBO, locations carry `_cascades4`), `VulkanisShaderSources` (jar-embedded GLSL),
+  `VulkanisShadowPipelines` (caster/receiver builders; receiver binds 3 samplers +
+  UBO, locations carry `_cascades3`, injects `VULKANIS_CASCADES=3` + `VULKANIS_API_VERSION=1`),
+  `VulkanisShaderSources` (pack-owned GLSL; absent keys = vanilla, never jar shadows),
   `ShadowGlobals` (own u_Globals buffer, one instance per cascade),
   `FrameMatrices`/`ShadowManager` (pure math, unit-tested; composite uses them).
 - `mixin/` — `VulkanisShadowPassMixin` (shadow FramePass at `addMainPass` HEAD; draws
   only refit cascades, prepares batches from our lists, restores main batches after),
   `VulkanisTerrainMixin` (`compileProgram` swap), `VulkanisUniformMixin` (mid-render Redirect
-  binds 4 maps + UBO), `DepthCopyMixin`, `SkySunMixin` (sunAngle→dir),
+  binds 3 maps + UBO), `DepthCopyMixin`, `SkySunMixin` (sunAngle→dir),
   `WorldCompositeMixin` (captures CameraRenderState),
   `sodium/SodiumWorldRendererAccessor`.
 - `screen/VulkanisShaderScreen` — pack list + per-pack settings steppers with per-setting
@@ -125,14 +127,17 @@ cp run/shaderpacks/VulkanicShader/pipeline.json <instance>/minecraft/shaderpacks
 - `VulkanisConfig` — Sodium option page: Vulkanis-Shader toggle + Shaders... button.
 - `assets/vulkanis/shaders/vulkanis/` — `vulkanis_shadow.vsh/.fsh` (atlas
   alpha-tested depth caster: 0.5 cutout / 0.01 translucent discard, opaque solid),
-  `vulkanis_terrain_receiver.vsh/.fsh` (cascade select by distance + 10% boundary blend
-  + 12% far fade, per-cascade texel bias, gradient-corrected PCF 1/9/25 taps via
-  `shadowSteps`, uncapped Complementary-style normal offset, micro depth bias,
-  skylight/blocklight-weighted strength + fog). Inlined Sodium snippets (no
+  `vulkanis_terrain_receiver.vsh/.fsh` (REFERENCE ONLY, engine never loads: cascade select
+  by distance + 10% boundary blend + 12% far fade, per-cascade texel bias, pack-owned
+  filter 0/1/2 via `filterRadius`/`filterMode`, uncapped Complementary-style normal offset,
+  micro depth bias, skylight/blocklight-weighted strength + fog). Inlined Sodium snippets (no
   `#moj_import` — not preprocessed on our path). Jar-embedded: full restart to reload.
-- `run/shaderpacks/VulkanicShader/` — user-facing pack: `pipeline.json` (settings:
-  shadowStrength/Bias/Steps, maxShadowDistance, vignetteStrength, shadowMapSize),
-  `composite.vsh/.fsh` (tonemap/vignette/Show Depth; dead screen-space `sunShadow`
+- `assets/vulkanis/shaders/include/` — engine-shipped pack includes: `poisson.glsl`
+  (Poisson-16 taps, IGN rotation), `shadow_common.glsl` (shadow coord, depth gradient).
+- `run/shaderpacks/VulkanicShader/` — user-facing pack, api 1: `pipeline.json` (settings:
+  shadowStrength/Bias, shadowFilterMode/Radius, maxShadowDistance, vignetteStrength, shadowMapSize),
+  `terrain.fsh` (reference api-1 receiver: rotated Poisson-16), `composite.vsh/.fsh`
+  (tonemap/vignette/Show Depth; dead screen-space `sunShadow`
   raymarch removed 2026-10-05; orphan `world.*`/`shadow.vert`/`composite.frag`
   deleted, `PackLoader` now requires `composite.vsh`+`fsh`).
   Pack `.fsh`/`.json` edits apply live via `selectPack` (no restart); instance dir mirrors `run/`.
@@ -143,16 +148,21 @@ WORKING: framework load, Vulkanis Sodium page + toggle + Shaders button, shader 
 per-pack settings + per-setting Reset buttons, I/K keybinds, composite tonemap/vignette,
 depth copy + Show Depth, pack hot-reload without reboot, strict pack validation, optional
 Sodium dep, full unit suite green (62).
-WORKING: 4-cascade sun shadows on Vulkan (clean-room rewrite, Sulkan approach, all code fresh):
+WORKING: 3-cascade sun shadows on Vulkan (clean-room rewrite, Sulkan approach, all code fresh):
 frustum-fitted texel-snapped cascades over Shadow Distance, staggered refits, cached caster
 plans, alpha-tested casters (leaves/grass cast with holes), cascade blend/fade receiver,
+pack-owned PCF (single-tap / 3x3 box / rotated Poisson-16 via Shadow Filter setting),
 uncapped Complementary-style normal offset. Verified in-session: batch-cache prepare/restore
 fix (shadow was drawing player-culled batches), LOAD-semantics multi-pass shadow targets
 (solid depths were wiped by the cutout clear), sampler-local GLSL crash fix (branch per
 sampler), Sulkan-mod conflict guard (ours stands down with an error; user runs one system).
+WORKING (2026-10-06): Vulkanis as shader provider (api 1): versioned pack contract
+(`PACK_CONTRACT.md`), engine-injected `VULKANIS_CASCADES`/`VULKANIS_API_VERSION` defines,
+`#include <vulkanis/...>` helpers (poisson, shadow_common), per-frame filter params
+(radius + mode) in ShadowParams, strict api validation with keep-last-good.
 Master toggle gates all shadow hooks (off = vanilla). Backend warning toast + red chat on GL.
 Repo: README.md, GPL-3.0-only (LICENSE, fabric.mod.json).
-OPEN (not bugs, future work): entity shadows, moon handover, hardware PCF + rotated kernels
-(plan steps 3/7), shadow-map distortion or smaller default radius for sharpness (steps 5/6),
-world-locked texel grid for translation swim, far-edge fade (step 8). Old suspect list retired:
+OPEN (not bugs, future work): entity shadows, moon handover, shadow-map distortion or
+smaller default radius for sharpness (steps 5/6), world-locked texel grid for
+translation swim. Old suspect list retired:
 uniforms.update() suspicion dropped (own ShadowGlobals + shared read-only time info holds up).

@@ -12,7 +12,8 @@ import net.minecraft.network.chat.Component;
 
 public class VulkanisShaderScreen extends Screen {
   private final Screen parent;
-  private String selectedTab = null;
+  /** Session-persistent: reopening the screen returns to the same tab. */
+  private static String selectedTab = null;
 
   public VulkanisShaderScreen(Screen parent) {
     super(Component.literal("Vulkanis Shaders"));
@@ -79,7 +80,7 @@ public class VulkanisShaderScreen extends Screen {
     if (!on) {
       com.vulkanis.render.ShadowHookState.setShowDepth(true);
       com.vulkanis.render.ShadowHookState.setDebugCascade(-1);
-    } else if (cascade < 3) {
+    } else if (cascade < com.vulkanis.render.shadow.CascadeShadows.CASCADE_COUNT - 1) {
       com.vulkanis.render.ShadowHookState.setDebugCascade(cascade + 1);
     } else {
       com.vulkanis.render.ShadowHookState.setShowDepth(false);

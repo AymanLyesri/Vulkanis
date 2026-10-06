@@ -58,7 +58,6 @@ public abstract class VulkanisShadowPassMixin {
     new com.vulkanis.render.shadow.ShadowGlobals(),
     new com.vulkanis.render.shadow.ShadowGlobals(),
     new com.vulkanis.render.shadow.ShadowGlobals(),
-    new com.vulkanis.render.shadow.ShadowGlobals(),
   };
   @Unique
   private static final CascadePlans vulkanis$plans = new CascadePlans();
@@ -155,7 +154,8 @@ public abstract class VulkanisShadowPassMixin {
           vulkanis$renderTerrainShadow(shadows, sodiumRenderer, cam, sampler, encoder);
         }
         shadows.uploadData(encoder, render ? VulkanisClient.shadowStrengthSetting() : 0.0f,
-          VulkanisClient.shadowBiasSetting(), VulkanisClient.shadowStepsSetting());
+          VulkanisClient.shadowBiasSetting(), VulkanisClient.shadowFilterRadiusSetting(),
+          VulkanisClient.shadowFilterModeSetting());
       } catch (Exception e) {
         if (!errorLogged) { errorLogged = true; LOG.warn("vulkanis: shadow pass failed", e); }
       } finally {
@@ -253,11 +253,11 @@ public abstract class VulkanisShadowPassMixin {
         // render, so skipping this would draw player-culled batches.
         sectionManager.getChunkRenderer().prepare(lists, shadowCamera, false);
         if ((vulkanis$shadowFrames % 600) == 0) {
-          LOG.info("vulkanis: shadow diag cascade={} end={} sections={} dir={} entityNodes=[{},{},{},{}] loop=[iter={} ok={} submitted={} failed={} err={}]",
+          LOG.info("vulkanis: shadow diag cascade={} end={} sections={} dir={} entityNodes=[{},{},{}] loop=[iter={} ok={} submitted={} failed={} err={}]",
             cascade, shadows.cascadeEnd(cascade), vulkanis$plans.casterSectionCount(cascade),
             shadows.lightDirection(), vulkanis$entityCasters.submitCount(0),
             vulkanis$entityCasters.submitCount(1), vulkanis$entityCasters.submitCount(2),
-            vulkanis$entityCasters.submitCount(3), vulkanis$entityIterated, vulkanis$entityExtracted,
+            vulkanis$entityIterated, vulkanis$entityExtracted,
             vulkanis$entitySubmitted, vulkanis$entityFailed, vulkanis$entityFirstError);
         }
         encoder.clearColorAndDepthTextures(shadows.target(cascade).getColorTexture(),

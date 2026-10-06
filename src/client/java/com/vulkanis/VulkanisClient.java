@@ -125,14 +125,34 @@ public class VulkanisClient implements ClientModInitializer {
       com.vulkanis.pack.PackValues values,
       java.util.List<com.vulkanis.pack.PackSetting> settings) {
     try {
-      String vsh = values.apply(Files.readString(new File(shadersDir, base + ".vsh").toPath()), settings);
-      String fsh = values.apply(Files.readString(new File(shadersDir, base + ".fsh").toPath()), settings);
+      String vsh = values.apply(resolveIncludes(
+        Files.readString(new File(shadersDir, base + ".vsh").toPath())), settings);
+      String fsh = values.apply(resolveIncludes(
+        Files.readString(new File(shadersDir, base + ".fsh").toPath())), settings);
       synchronized (packShaders) {
         packShaders.put(ShaderLibrary.key("vulkanis", "pack/" + base, "vertex"), vsh);
         packShaders.put(ShaderLibrary.key("vulkanis", "pack/" + base, "fragment"), fsh);
       }
       LOG.info("vulkanis: pack {} shaders loaded tokensLeft={}", base, fsh.contains("{{"));
+    } catch (com.vulkanis.pack.ShaderIncludes.IncludeException e) {
+      LOG.warn("vulkanis: pack {} includes failed: {}", base, e.getMessage());
+      ShadowHookState.setLastPackError(base + ": " + e.getMessage());
     } catch (Exception ignored) { }
+  }
+
+  /** Inline engine-shipped {@code #include <vulkanis/...>} helpers (api 1). */
+  static String resolveIncludes(String glsl) {
+    return com.vulkanis.pack.ShaderIncludes.resolve(glsl, name -> {
+      try (var in = VulkanisClient.class.getResourceAsStream(
+          "/assets/vulkanis/shaders/include/" + name)) {
+        if (in == null) {
+          return null;
+        }
+        return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+      } catch (Exception e) {
+        return null;
+      }
+    });
   }
   public static ShaderLibrary packShaders() { return packShaders; }
   public static CompositeRenderer composite() { return composite; }
@@ -176,6 +196,29 @@ public class VulkanisClient implements ClientModInitializer {
   public static int shadowStepsSetting() {
     synchronized (shaderSettingValues) {
       return shaderSettingValues.getOrDefault("shadowSteps", 24.0).intValue();
+    }
+  }
+
+  /** Pack filter radius in shadow-map texels (api 1 ShadowParams.z). */
+  public static float shadowFilterRadiusSetting() {
+    synchronized (shaderSettingValues) {
+      return shaderSettingValues.getOrDefault("shadowFilterRadius", 1.0).floatValue();
+    }
+  }
+
+  /**
+   * Pack filter mode (api 1 ShadowParams.w): 0 = single tap, 1 = 3x3 box,
+   * 2 = Poisson. Falls back to the legacy shadowSteps thresholds when the
+   * pack does not declare shadowFilterMode.
+   */
+  public static float shadowFilterModeSetting() {
+    synchronized (shaderSettingValues) {
+      Double mode = shaderSettingValues.get("shadowFilterMode");
+      if (mode != null) {
+        return mode.floatValue();
+      }
+      int steps = shaderSettingValues.getOrDefault("shadowSteps", 24.0).intValue();
+      return steps < 16 ? 0.0f : steps < 40 ? 1.0f : 2.0f;
     }
   }
 

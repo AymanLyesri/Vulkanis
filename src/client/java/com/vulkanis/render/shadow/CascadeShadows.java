@@ -23,7 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Cascaded sun shadows. Four frustum-fitted cascades cover the configured
+ * Cascaded sun shadows. Three frustum-fitted cascades cover the configured
  * shadow range; near cascades refit often, far ones rarely. Between refits the
  * live matrix slides with the camera instead of refitting.
  *
@@ -33,14 +33,14 @@ import org.slf4j.LoggerFactory;
  * and cheap. The receiver picks a cascade purely by view distance.
  */
 public final class CascadeShadows {
-  public static final int CASCADE_COUNT = 4;
+  public static final int CASCADE_COUNT = 3;
   public static final int UBO_BYTES = 64 * CASCADE_COUNT + 16 * CASCADE_COUNT + 16 + 16;
 
   private static final Logger LOG = LoggerFactory.getLogger("vulkanis");
   private static final int DEFAULT_SIZE = 2048;
   private static final float MIN_SUN_HEIGHT = 0.12f;
-  private static final int[] UPDATE_INTERVALS = {3, 8, 16, 32};
-  private static final double[] MOVE_LIMITS = {1.5, 4.0, 12.0, 24.0};
+  private static final int[] UPDATE_INTERVALS = {3, 8, 16};
+  private static final double[] MOVE_LIMITS = {1.5, 4.0, 12.0};
   private static final float LIST_MOVE_LIMIT = 4.0f;
   private static final float LIGHT_DIR_DOT = 0.9998f;
   private static final float LOOK_DIR_DOT = 0.9659f;
@@ -366,7 +366,7 @@ public final class CascadeShadows {
     return dataSlice;
   }
 
-  public void uploadData(CommandEncoder encoder, float strength, float bias, int steps) {
+  public void uploadData(CommandEncoder encoder, float strength, float bias, float filterRadius, float filterMode) {
     upload.clear();
     for (int i = 0; i < CASCADE_COUNT; i++) {
       live[i].get(matrixFloats);
@@ -378,7 +378,7 @@ public final class CascadeShadows {
     }
     upload.putFloat(lightDirection.x).putFloat(lightDirection.y).putFloat(lightDirection.z).putFloat(0.0f);
     float s = sunUp ? strength : 0.0f;
-    upload.putFloat(s).putFloat(bias).putFloat(0.0f).putFloat((float) steps);
+    upload.putFloat(s).putFloat(bias).putFloat(filterRadius).putFloat(filterMode);
     upload.flip();
     try {
       encoder.writeToBuffer(dataSlice, upload);

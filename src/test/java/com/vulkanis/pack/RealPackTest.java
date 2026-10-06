@@ -7,9 +7,9 @@ public class RealPackTest {
     File dir = new File("run/shaderpacks/VulkanicShader");
     assertTrue(new File(dir, "pipeline.json").exists(), "pack missing");
     var settings = PackLoader.parseSettings(dir);
-    assertEquals(16, settings.size(), "want 16 settings, got " + settings.size());
+    assertEquals(19, settings.size(), "want 19 settings, got " + settings.size());
     PackValues v = PackValues.load(new File(dir, "settings.json"), settings);
-    String out = v.apply("int s={{shadowSteps}}; float b={{shadowBias}};", settings);
+    String out = v.apply("int m={{shadowFilterMode}}; float r={{shadowFilterRadius}}; float b={{bloomEnabled}} * {{exposureEnabled}};", settings);
     assertFalse(out.contains("{{"), "unsubstituted token in: " + out);
   }
   @Test public void missingPackShadersLeaveLibraryEmpty() {

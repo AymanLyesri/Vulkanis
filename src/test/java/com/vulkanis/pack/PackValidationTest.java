@@ -78,7 +78,7 @@ public class PackValidationTest {
     assertThrows(PackLoader.PackException.class, () -> PackLoader.loadSpec(dir));
   }
   @Test public void detectsPackOwnedShadowShaders() throws Exception {
-    File dir = pack("irispack", "{\"id\":\"iris\",\"shadowSize\":2048}");
+    File dir = pack("irispack", "{\"id\":\"iris\",\"shadowSize\":2048,\"api\":1}");
     new File(new File(dir, "shaders"), "shadow.vsh").createNewFile();
     new File(new File(dir, "shaders"), "shadow.fsh").createNewFile();
     new File(new File(dir, "shaders"), "terrain.vsh").createNewFile();
@@ -86,6 +86,24 @@ public class PackValidationTest {
     PipelineSpec s = PackLoader.loadSpec(dir);
     assertTrue(s.hasShadowShaders());
     assertTrue(s.hasTerrainShaders());
+    assertEquals(1, s.api());
+  }
+  @Test public void rejectsShadowShadersWithoutApi() throws Exception {
+    File dir = pack("noapi", "{\"id\":\"noapi\",\"shadowSize\":2048}");
+    new File(new File(dir, "shaders"), "shadow.vsh").createNewFile();
+    new File(new File(dir, "shaders"), "shadow.fsh").createNewFile();
+    new File(new File(dir, "shaders"), "terrain.vsh").createNewFile();
+    new File(new File(dir, "shaders"), "terrain.fsh").createNewFile();
+    PackLoader.PackException e = assertThrows(PackLoader.PackException.class, () -> PackLoader.loadSpec(dir));
+    assertTrue(e.getMessage().contains("api"), "named error, got: " + e.getMessage());
+  }
+  @Test public void rejectsShadowShadersWithWrongApi() throws Exception {
+    File dir = pack("badapi", "{\"id\":\"badapi\",\"shadowSize\":2048,\"api\":99}");
+    new File(new File(dir, "shaders"), "shadow.vsh").createNewFile();
+    new File(new File(dir, "shaders"), "shadow.fsh").createNewFile();
+    new File(new File(dir, "shaders"), "terrain.vsh").createNewFile();
+    new File(new File(dir, "shaders"), "terrain.fsh").createNewFile();
+    assertThrows(PackLoader.PackException.class, () -> PackLoader.loadSpec(dir));
   }
   @Test public void compositeOnlyPackStillValidates() throws Exception {
     File dir = pack("plainpack", "{\"id\":\"plain\",\"shadowSize\":2048}");

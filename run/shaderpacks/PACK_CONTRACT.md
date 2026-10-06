@@ -1,9 +1,20 @@
-# Vulkanis Pack Shader Contract
+# Vulkanis Pack Shader Contract (api 1)
 
-Pack-owned shadows: your pack's `shadow.vsh/.fsh` (caster) and `terrain.vsh/.fsh`
-(receiver) replace the jar shaders. The engine still owns cascade fitting, depth
-targets, and all uniform bindings. Your code adapts to the names below — they are
-fixed and will not be renamed.
+Vulkanis is the shader provider: the engine owns cascade fitting, depth
+targets, and all uniform bindings, and exposes them through this versioned
+API. Your pack's `shadow.vsh/.fsh` (caster) and `terrain.vsh/.fsh`
+(receiver) implement your own shadows and filtering against it.
+
+- Declare `"api": 1` in `pipeline.json`. A pack with shadow/terrain shaders
+  but any other (or missing) `api` is rejected with a named error and the
+  previous pack is kept. Composite-only packs don't need `api`.
+- Pack has `shadow.vsh`+`shadow.fsh` AND `terrain.vsh`+`terrain.fsh` → your shadows run.
+- Pack missing any of the four → vanilla rendering, no shadows. No silent fallback.
+- Broken GLSL → vanilla rendering + one-line error in the Shaders screen. Never a crash.
+- `{{settingId}}` tokens in your shaders are substituted from `pipeline.json` settings.
+- `#include <vulkanis/<name>>` inlines an engine-shipped helper (see below).
+  Unknown, outside-`vulkanis/`, cyclic, or missing includes are load errors
+  with the file named; the pack is kept out, never half-built.
 
 ## Rule
 
@@ -27,17 +38,26 @@ Receiver (`terrain.*`): all of the above, plus:
 
 | Name | Type |
 |---|---|
-| `VulkanisShadowMap0..3` | `sampler2D` (depth, nearest-filtered, one per cascade) |
-| `VulkanisShadowData` | std140 UBO, 352 bytes (below) |
+| `VulkanisShadowMap0..2` | `sampler2D` (depth, nearest-filtered, one per cascade) |
+| `VulkanisShadowData` | std140 UBO, 288 bytes (below) |
 
 ## `VulkanisShadowData` (offsets in bytes)
 
 | Offset | Field | Meaning |
 |---|---|---|
-| 0 / 64 / 128 / 192 | `mat4 CascadeMatrix[4]` | sun view-proj per cascade, camera-relative |
-| 256 / 272 / 288 / 304 | `vec4 CascadeInfo[4]` | (texelWorldSize, previousEnd, end, depthRange) |
-| 320 | `vec4 LightDirection` | xyz = sun dir, w unused |
-| 336 | `vec4 ShadowParams` | (strength, microBias, unused, steps) |
+| 0 / 64 / 128 | `mat4 CascadeMatrix[3]` | sun view-proj per cascade, camera-relative |
+| 192 / 208 / 224 | `vec4 CascadeInfo[3]` | (texelWorldSize, previousEnd, end, depthRange) |
+| 240 | `vec4 LightDirection` | xyz = sun dir, w unused |
+| 256 | `vec4 ShadowParams` | (strength, microBias, filterRadius, filterMode) |
+
+`filterRadius` (ShadowParams.z) is your pack's `shadowFilterRadius` setting
+(texel multiplier, default 1.0). `filterMode` (ShadowParams.w) is your pack's
+`shadowFilterMode` setting: 0 = single tap, 1 = 3x3 box, 2 = rotated
+Poisson-16 (default). The engine pipes them per frame (live slider response);
+what your kernel does with them is entirely yours — or ignore both and use
+`{{tokens}}` baked at load for anything else. A pack without
+`shadowFilterMode` falls back to legacy `shadowSteps` thresholds
+(<16 → 0, <40 → 1, else 2).
 
 Pick cascade `i` by view distance: first `i` with `dist <= CascadeInfo[i].z`.
 Project: `clip = CascadeMatrix[i] * vec4(cameraRelativePos, 1)`, uv = `clip.xy/clip.w*0.5+0.5`.
@@ -67,15 +87,36 @@ Copy the decode block from the jar reference
 | both | `USE_VERTEX_COMPRESSION` | always |
 | caster + receiver | `ALPHA_CUTOUT` | `0.5` cutout pass, `0.01` translucent pass, absent on solid |
 | receiver | `USE_FOG` | always |
-| receiver | `VULKANIS_CASCADE_COUNT` | `4` |
+| receiver | `VULKANIS_CASCADE_COUNT` | `3` |
+| receiver | `VULKANIS_CASCADES` | `3` (same; use this name in array sizes) |
+| receiver | `VULKANIS_API_VERSION` | `1` |
+
+Declare arrays as `CascadeMatrix[VULKANIS_CASCADES]`. Do NOT redefine
+`VULKANIS_CASCADES` yourself; guard offline fallbacks with
+`#ifndef VULKANIS_CASCADES`. Samplers MUST be branched per cascade
+(`if (cascade == 1) ... else ...`) — samplers cannot be indexed by a
+variable or stored in locals on the glslang backend; violating GLSL fails
+the pipeline compile and the pack is rejected with the backend log.
 
 Receiver pipelines use QUADS topology, culling on; caster pipelines depth `LESS_THAN_OR_EQUAL`, no culling.
+
+## Includes (api 1)
+
+| Include | Provides |
+|---|---|
+| `<vulkanis/shadow_common.glsl>` | `vulkanisShadowCoord`, `vulkanisDepthGradient` |
+| `<vulkanis/poisson.glsl>` | `VULKANIS_POISSON16` taps, `vulkanisFilterAngle` (IGN rotation), `vulkanisRotateTap` |
+
+Includes resolve before `{{token}}` substitution, so tokens work inside
+included code too. Place `#include` after your sampler declarations.
 
 ## Reference
 
 The jar shaders are the working example — copy and simplify them. Start from
-`vulkanis_terrain_receiver.fsh` and delete what you don't need (e.g. reduce PCF
-to 1 tap) before writing your own.
+`vulkanis_terrain_receiver.fsh` and delete what you don't need (e.g. fix
+`filterMode` to 0 for 1 tap) before writing your own. VulkanicShader's
+`terrain.fsh` is the reference api-1 consumer: 3 cascades, 10% boundary
+blend, far fade, rotated Poisson-16 with `filterMode` 0/1/2 selection.
 
 ## Composite passes (optional)
 

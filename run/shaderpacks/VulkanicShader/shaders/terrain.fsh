@@ -1,6 +1,8 @@
 #version 460 core
-// VulkanicShader receiver: picks a cascade by distance, compares sun depths with
-// gradient-corrected PCF, blends at cascade borders, fades far away, then fogs.
+// VulkanicShader receiver (api 1): picks a cascade by distance, compares sun
+// depths with a pack-owned filter, blends at cascade borders, fades far away.
+// The engine only pipes data (maps, matrices, ShadowParams); every filtering
+// decision below is ours to change.
 
 layout(std140) uniform u_Globals {
 	mat4 u_ProjectionMatrix;
@@ -42,18 +44,25 @@ uniform sampler2D u_BlockTex;
 uniform sampler2D VulkanisShadowMap0;
 uniform sampler2D VulkanisShadowMap1;
 uniform sampler2D VulkanisShadowMap2;
-uniform sampler2D VulkanisShadowMap3;
 
-#define VULKANIS_CASCADES 4
+// Engine injects VULKANIS_CASCADES (= 3 on api 1) as a compiler define;
+// the fallback below only serves offline editing without the engine.
+#ifndef VULKANIS_CASCADES
+#define VULKANIS_CASCADES 3
+#endif
 
 layout(std140) uniform VulkanisShadowData {
 	mat4 CascadeMatrix[VULKANIS_CASCADES];
 	// (texelWorldSize, previousEnd, end, depthRange)
 	vec4 CascadeInfo[VULKANIS_CASCADES];
 	vec4 LightDirection;
-	// (strength, microBias, unused, steps)
+	// (strength, microBias, filterRadius, filterMode)
+	// filterMode: 0 = single tap, 1 = 3x3 box, 2 = rotated Poisson-16.
 	vec4 ShadowParams;
 };
+
+#include <vulkanis/shadow_common.glsl>
+#include <vulkanis/poisson.glsl>
 
 layout(location = 0) in vec4 v_Color;
 layout(location = 1) in vec2 v_TexCoord;
@@ -72,39 +81,16 @@ vec3 vulkanisTerrainNormal(vec3 position) {
 	return dot(normal, -position) < 0.0 ? -normal : normal;
 }
 
-vec3 vulkanisShadowCoord(mat4 shadowMatrix, vec3 position) {
-	vec4 clip = shadowMatrix * vec4(position, 1.0);
-	float invW = 1.0 / max(abs(clip.w), 0.000001);
-	return vec3(clip.xy * invW * 0.5 + 0.5, clip.z * invW);
-}
-
-// How fast depth changes per unit of shadow-map UV. Lets each tap correct its
-// compare depth so slanted surfaces don't smear.
-vec2 vulkanisDepthGradient(vec3 coord) {
-	vec2 uvDx = dFdxFine(coord.xy);
-	vec2 uvDy = dFdyFine(coord.xy);
-	float depthDx = dFdxFine(coord.z);
-	float depthDy = dFdyFine(coord.z);
-	float det = uvDx.x * uvDy.y - uvDx.y * uvDy.x;
-	if (abs(det) < 1.0e-10) return vec2(0.0);
-	vec2 grad = vec2(
-		(depthDx * uvDy.y - depthDy * uvDx.y) / det,
-		(uvDx.x * depthDy - uvDy.x * depthDx) / det);
-	return clamp(grad, vec2(-2.0), vec2(2.0));
-}
-
 // Samplers can't be picked by a variable on our backend, so branch per cascade.
 vec2 vulkanisMapTexel(int cascade) {
 	if (cascade == 1) return 1.0 / vec2(textureSize(VulkanisShadowMap1, 0));
 	if (cascade == 2) return 1.0 / vec2(textureSize(VulkanisShadowMap2, 0));
-	if (cascade == 3) return 1.0 / vec2(textureSize(VulkanisShadowMap3, 0));
 	return 1.0 / vec2(textureSize(VulkanisShadowMap0, 0));
 }
 
 float vulkanisMapDepth(int cascade, vec2 uv) {
 	if (cascade == 1) return texture(VulkanisShadowMap1, uv).r;
 	if (cascade == 2) return texture(VulkanisShadowMap2, uv).r;
-	if (cascade == 3) return texture(VulkanisShadowMap3, uv).r;
 	return texture(VulkanisShadowMap0, uv).r;
 }
 
@@ -115,7 +101,7 @@ float vulkanisTapVisibility(int cascade, vec2 tapUv, vec2 receiverUv,
 	return step(tapCompare, vulkanisMapDepth(cascade, sampleUv));
 }
 
-float vulkanisSampleCascade(int cascade, vec3 offsetPos, float steps) {
+float vulkanisSampleCascade(int cascade, vec3 offsetPos, float filterRadius, float filterMode) {
 	mat4 shadowMatrix = CascadeMatrix[cascade];
 	vec4 info = CascadeInfo[cascade];
 	float texelWorld = info.x;
@@ -129,18 +115,27 @@ float vulkanisSampleCascade(int cascade, vec3 offsetPos, float steps) {
 	float precisionBias = (0.0005 + texelWorld * 0.015) / depthRange;
 	float compareDepth = coord.z - precisionBias - ShadowParams.y / depthRange;
 	vec2 gradient = vulkanisDepthGradient(coord);
-	int hw = steps < 16.0 ? 0 : (steps < 40.0 ? 1 : 2);
-	float visible = 0.0;
-	float taps = 0.0;
-	for (int y = -2; y <= 2; ++y) {
-		for (int x = -2; x <= 2; ++x) {
-			if (abs(x) > hw || abs(y) > hw) continue;
-			vec2 tapUv = coord.xy + vec2(float(x), float(y)) * texel;
-			visible += vulkanisTapVisibility(cascade, tapUv, coord.xy, compareDepth, gradient, texel);
-			taps += 1.0;
-		}
+	vec2 radius = max(filterRadius, 0.0) * texel;
+	if (filterMode < 0.5) {
+		return vulkanisTapVisibility(cascade, coord.xy, coord.xy, compareDepth, gradient, texel);
 	}
-	return visible / max(taps, 1.0);
+	if (filterMode < 1.5) {
+		float visible = 0.0;
+		for (int y = -1; y <= 1; ++y) {
+			for (int x = -1; x <= 1; ++x) {
+				vec2 tapUv = coord.xy + vec2(float(x), float(y)) * radius;
+				visible += vulkanisTapVisibility(cascade, tapUv, coord.xy, compareDepth, gradient, texel);
+			}
+		}
+		return visible / 9.0;
+	}
+	float angle = vulkanisFilterAngle(gl_FragCoord.xy);
+	float visible = 0.0;
+	for (int i = 0; i < 16; ++i) {
+		vec2 tapUv = coord.xy + vulkanisRotateTap(VULKANIS_POISSON16[i], angle) * radius;
+		visible += vulkanisTapVisibility(cascade, tapUv, coord.xy, compareDepth, gradient, texel);
+	}
+	return visible / 16.0;
 }
 
 // Push the sample off the surface along its normal. Kills acne up close without
@@ -170,11 +165,12 @@ void main() {
 	}
 	float visibility = 1.0;
 	if (strength > 0.001 && cascade >= 0) {
-		float steps = ShadowParams.w;
+		float filterRadius = ShadowParams.z;
+		float filterMode = ShadowParams.w;
 		vec4 info = CascadeInfo[cascade];
 		vec3 offsetPos = v_ReceiverPos
 			+ normal * vulkanisNormalOffsetWorld(normal, dist);
-		visibility = vulkanisSampleCascade(cascade, offsetPos, steps);
+		visibility = vulkanisSampleCascade(cascade, offsetPos, filterRadius, filterMode);
 		if (cascade < VULKANIS_CASCADES - 1) {
 			// Blend into the next cascade over the last 10% so seams don't show.
 			float span = max(info.z - info.y, 0.001);
@@ -182,7 +178,7 @@ void main() {
 			if (dist > edge && CascadeInfo[cascade + 1].z > 0.0) {
 				vec3 nextPos = v_ReceiverPos
 					+ normal * vulkanisNormalOffsetWorld(normal, dist);
-				float next = vulkanisSampleCascade(cascade + 1, nextPos, steps);
+				float next = vulkanisSampleCascade(cascade + 1, nextPos, filterRadius, filterMode);
 				visibility = mix(visibility, next, smoothstep(edge, info.z, dist));
 			}
 		} else {

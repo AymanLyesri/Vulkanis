@@ -37,7 +37,7 @@ public final class VulkanisShadowPipelines {
   private static RenderPipeline build(TerrainRenderPass pass, VertexFormat vertexFormat, boolean caster) {
     String layer = pass.isTranslucent() ? "translucent" : pass.supportsFragmentDiscard() ? "cutout" : "solid";
     String shader = caster ? "vulkanis_shadow" : "vulkanis_terrain_receiver";
-    String variant = caster ? shader : shader + "_cascades4";
+    String variant = caster ? shader : shader + "_cascades3";
     RenderPipeline.Builder builder = RenderPipeline.builder()
       .withBindGroupLayout(caster ? sodiumLayout() : receiverLayout())
       .withLocation(Identifier.fromNamespaceAndPath("vulkanis", "pipeline/shadow/" + variant + "_" + layer))
@@ -56,7 +56,9 @@ public final class VulkanisShadowPipelines {
       builder.withDepthStencilState(DepthStencilState.DEFAULT)
         .withCull(true)
         .withShaderDefine("USE_FOG")
-        .withShaderDefine("VULKANIS_CASCADE_COUNT", 4);
+        .withShaderDefine("VULKANIS_CASCADE_COUNT", 3)
+        .withShaderDefine("VULKANIS_CASCADES", 3)
+        .withShaderDefine("VULKANIS_API_VERSION", 1);
       if (pass.isTranslucent()) {
         builder.withColorTargetState(ColorTargetState.DEFAULT);
       } else {
@@ -90,7 +92,6 @@ public final class VulkanisShadowPipelines {
       .withUniform("VulkanisShadowMap0", UniformType.COMBINED_IMAGE_SAMPLER)
       .withUniform("VulkanisShadowMap1", UniformType.COMBINED_IMAGE_SAMPLER)
       .withUniform("VulkanisShadowMap2", UniformType.COMBINED_IMAGE_SAMPLER)
-      .withUniform("VulkanisShadowMap3", UniformType.COMBINED_IMAGE_SAMPLER)
       .withUniform("VulkanisShadowData", UniformType.UNIFORM_BUFFER)
       .build();
   }
